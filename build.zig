@@ -32,7 +32,9 @@ pub fn build(b: *std.Build) void {
     const ShellBuiltins = enum {
         /// None = No Builtin funcitionality.
         None,
-        /// Basic = Basic Builtin functionality (cd, history, exit)
+        /// Bare = Bare minimum Builtins (cd and exit)
+        Bare,
+        /// Basic = Basic Builtin functionality (history)
         Basic,
         /// Advanced = Advanced Builtin functionality (jobs, up/down arrows for history, tab completion)
         Advanced,

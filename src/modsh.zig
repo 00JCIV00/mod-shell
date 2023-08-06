@@ -2,6 +2,7 @@
 
 // Standard Lib
 const std = @import("std");
+const fmt = std.fmt;
 const log = std.log;
 const mem = std.mem;
 const process = std.process;
@@ -48,46 +49,43 @@ pub fn shLoop(alloc: mem.Allocator, in: anytype, out: anytype, err: anytype) !vo
 
         // Get Arguments
         const line = try in.readUntilDelimiterOrEofAlloc(alloc, '\n', BUFSIZE) orelse continue;
-        if (sh_opts.shell_builtins != .None) try history.append(try alloc.dupe(u8, line));
+        if (@intFromEnum(sh_opts.shell_builtins) > @intFromEnum(@TypeOf(sh_opts.shell_builtins).Bare) and line[0] != '!') try history.append(try alloc.dupe(u8, line));
         defer alloc.free(line);
-        const args = genArgs: {
-            var args_list = std.ArrayList([]const u8).init(alloc);
-            defer args_list.deinit();
-            var tokens = mem.splitAny(u8, line, " \n");
-            while (tokens.next()) |tok| try args_list.append(tok);
-            break :genArgs try args_list.toOwnedSlice();
-        };
+        const args = try splitArgs(line, alloc);
         defer alloc.free(args);
 
         // Parse Arguments
         switch (sh_opts.shell_builtins) {
-            .None => {},
+            .None => {
+                execRawArgs(args, alloc, out, err) catch |exec_err| switch (exec_err) {
+                    error.ResultError => continue,
+                    else => |other_error| return other_error,
+                };
+            },
+            .Bare => {
+                if (try execBareArgs(args, alloc, out, err)) continue;
+                break;
+            },
             .Basic => {
-                if (mem.eql(u8, args[0], "cd")) {
-                    try process.changeCurDir(args[1]);
-                    continue;
-                }
-                if (mem.eql(u8, args[0], "history")) {
-                    try writeHistory(history, out);
-                    continue;
-                }
-                if (mem.eql(u8, args[0], "exit")) {
-                    try out.print("Exiting!\n", .{});   
-                    process.cleanExit();
-                    return;
-                }
+                if (try execBasicArgs(args, &history, alloc, out, err)) continue;
+                break;
             },
             else => @compileError("The provided kind of Shell Builtins is not yet implemented."),
         }
-        execRawArgs(args, alloc, out, err) catch |exec_err| switch (exec_err) {
-            error.ResultError => continue,
-            else => |other_error| return other_error,
-        };
     }
 
 }
 
-/// Execute Raw Arguments
+/// Split the provided String (`line`) to Arguments.
+fn splitArgs(line: []const u8, alloc: mem.Allocator) ![]const []const u8 {
+    var args_list = std.ArrayList([]const u8).init(alloc);
+    defer args_list.deinit();
+    var tokens = mem.splitAny(u8, line, " \n");
+    while (tokens.next()) |tok| try args_list.append(tok);
+    return try args_list.toOwnedSlice();
+}
+
+/// Execute Raw Arguments.
 fn execRawArgs(args: []const []const u8, alloc: mem.Allocator, out: anytype, err: anytype) !void {
     const result = std.ChildProcess.exec(.{
         .allocator = alloc,
@@ -105,7 +103,49 @@ fn execRawArgs(args: []const []const u8, alloc: mem.Allocator, out: anytype, err
     }
 }
 
+/// Execute Arguments with Bare Builtins. This will return a Boolean to determine if the shell should continue or not.
+fn execBareArgs(args: []const []const u8, alloc: mem.Allocator, out: anytype, err: anytype) !bool {
+    if (mem.eql(u8, args[0], "cd")) {
+        process.changeCurDir(args[1]) catch |cd_err| switch (cd_err) {
+            error.AccessDenied => try out.print("Insufficient Privileges. Access Denied!\n", .{}),
+            else => |other_error| return other_error,
+        };
+        return true;
+    }
+    if (mem.eql(u8, args[0], "exit")) {
+        try out.print("Exiting!\n", .{});
+        process.cleanExit();
+        return false;
+    }
+    execRawArgs(args, alloc, out, err) catch |exec_err| switch (exec_err) {
+        error.ResultError => return true,
+        else => |other_error| return other_error,
+    };
+    return true;
+}
+
+/// Execute Arguments with Basic Builtins. This will return a Boolean to determine if the shell should continue or not.
+fn execBasicArgs(args: []const []const u8, history: *std.ArrayList([]const u8), alloc: mem.Allocator, out: anytype, err: anytype) !bool {
+    if (mem.eql(u8, args[0], "history")) {
+        try writeHistory(history.*, out);
+        return true;
+    }
+    if (args[0][0] == '!' and history.items.len > 0) {
+        const line_num = 
+            if (args[0][1] == '!') history.items.len - 1 
+            else fmt.parseInt(usize, args[0][1..], 0) catch {
+                try err.print("'{s}' is not a valid command reference.\n", .{ args[0][1..] });
+                return true;
+            };
+        const history_args = try splitArgs(history.items[line_num], alloc);
+        try history.append(history.items[line_num]);
+        return try execBasicArgs(history_args, history, alloc, out, err); 
+    }
+    return execBareArgs(args, alloc, out, err);
+}
+
 /// Write the provided History (`history`) to the provided Writer (`out`).
 fn writeHistory(history: std.ArrayList([]const u8), out: anytype) !void {
     for (history.items, 0..) |item, idx| try out.print("{d}: {s}\n", .{ idx, item });
+    try out.print("\n", .{});
 }
