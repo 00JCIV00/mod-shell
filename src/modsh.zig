@@ -77,7 +77,7 @@ pub fn shLoop(alloc: mem.Allocator, in: anytype, out: anytype, err: anytype) !vo
                     return;
                 }
             },
-            else => @compileError("The provided Shell Builtins type is not yet implemented."),
+            else => @compileError("The provided kind of Shell Builtins is not yet implemented."),
         }
         execRawArgs(args, alloc, out, err) catch |exec_err| switch (exec_err) {
             error.ResultError => continue,
