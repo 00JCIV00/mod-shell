@@ -49,15 +49,15 @@ pub fn shLoop(alloc: mem.Allocator, in: anytype, out: anytype, err: anytype) !vo
 
         // Get Arguments
         const line = try in.readUntilDelimiterOrEofAlloc(alloc, '\n', BUFSIZE) orelse continue;
-        if (@intFromEnum(sh_opts.shell_builtins) > @intFromEnum(@TypeOf(sh_opts.shell_builtins).Bare) and line[0] != '!') try history.append(try alloc.dupe(u8, line));
         defer alloc.free(line);
+        if (@intFromEnum(sh_opts.shell_builtins) > @intFromEnum(@TypeOf(sh_opts.shell_builtins).Bare) and line[0] != '!') try history.append(try alloc.dupe(u8, line));
         const args = try splitArgs(line, alloc);
         defer alloc.free(args);
 
         // Parse Arguments
         switch (sh_opts.shell_builtins) {
             .None => {
-                execRawArgs(args, alloc, out, err) catch |exec_err| switch (exec_err) {
+                execRawArgs(args, alloc, err) catch |exec_err| switch (exec_err) {
                     error.ResultError => continue,
                     else => |other_error| return other_error,
                 };
@@ -86,28 +86,22 @@ fn splitArgs(line: []const u8, alloc: mem.Allocator) ![]const []const u8 {
 }
 
 /// Execute Raw Arguments.
-fn execRawArgs(args: []const []const u8, alloc: mem.Allocator, out: anytype, err: anytype) !void {
-    const result = std.ChildProcess.exec(.{
-        .allocator = alloc,
-        .argv = args,
-    }) catch |result_err| {
-        try err.print("There was an issue running '{s}'.", .{ args[0] });
-        try err.print("{any}\n", .{ result_err });
-        return error.ResultError;
+fn execRawArgs(args: []const []const u8, alloc: mem.Allocator, err: anytype) !void {
+    var proc = process.Child.init(args, alloc);
+    _ = proc.spawnAndWait() catch |child_err| switch (child_err) {
+        error.FileNotFound => {
+            try err.print("There was an issue running '{s}'", .{ args[0] });
+            return error.ResultError;
+        },
+        else => |other_error| return other_error,
     };
-    if (result.stderr.len > 0) try err.print("{s}\n", .{ result.stderr });
-    if (result.stdout.len > 0) try out.print("{s}\n", .{ result.stdout });
-    defer {
-        alloc.free(result.stdout);
-        alloc.free(result.stderr);
-    }
 }
 
 /// Execute Arguments with Bare Builtins. This will return a Boolean to determine if the shell should continue or not.
 fn execBareArgs(args: []const []const u8, alloc: mem.Allocator, out: anytype, err: anytype) !bool {
     if (mem.eql(u8, args[0], "cd")) {
         process.changeCurDir(args[1]) catch |cd_err| switch (cd_err) {
-            error.AccessDenied => try out.print("Insufficient Privileges. Access Denied!\n", .{}),
+            error.AccessDenied => try err.print("Insufficient Privileges. Access Denied!\n", .{}),
             else => |other_error| return other_error,
         };
         return true;
@@ -117,7 +111,8 @@ fn execBareArgs(args: []const []const u8, alloc: mem.Allocator, out: anytype, er
         process.cleanExit();
         return false;
     }
-    execRawArgs(args, alloc, out, err) catch |exec_err| switch (exec_err) {
+    
+    execRawArgs(args, alloc, err) catch |exec_err| switch (exec_err) {
         error.ResultError => return true,
         else => |other_error| return other_error,
     };
@@ -126,6 +121,13 @@ fn execBareArgs(args: []const []const u8, alloc: mem.Allocator, out: anytype, er
 
 /// Execute Arguments with Basic Builtins. This will return a Boolean to determine if the shell should continue or not.
 fn execBasicArgs(args: []const []const u8, history: *std.ArrayList([]const u8), alloc: mem.Allocator, out: anytype, err: anytype) !bool {
+    if ((mem.eql(u8, args[0], "sudo") and mem.eql(u8, args[1], "su")) or
+        mem.eql(u8, args[0], "root_access")) {
+        const modsh_file = "./modsh"; // TODO Get the binary name programmatically.
+        var sudo_proc = process.Child.init(&.{ "sudo", modsh_file }, alloc);
+        _ = try sudo_proc.spawnAndWait();
+        return true;
+    }
     if (mem.eql(u8, args[0], "history")) {
         try writeHistory(history.*, out);
         return true;

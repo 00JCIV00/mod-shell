@@ -9,7 +9,7 @@ pub fn build(b: *std.Build) void {
 
     // Mod Shell Executable
     const modsh_exe = b.addExecutable(.{
-        .name = "mod-shell",
+        .name = "modsh",
         .root_source_file = .{ .path = "src/modsh.zig" },
         .target = target,
         .optimize = optimize,
@@ -32,15 +32,15 @@ pub fn build(b: *std.Build) void {
     const ShellBuiltins = enum {
         /// None = No Builtin funcitionality.
         None,
-        /// Bare = Bare minimum Builtins (cd and exit)
+        /// Bare = Bare minimum Builtins (cd, exit)
         Bare,
-        /// Basic = Basic Builtin functionality (history)
+        /// Basic = Basic Builtin functionality (Bare + root_access, history, jobs, kill)
         Basic,
-        /// Advanced = Advanced Builtin functionality (jobs, up/down arrows for history, tab completion)
+        /// Advanced = Advanced Builtin functionality (Basic + up/down arrows for history, tab completion, "Ctrl+" modifiers)
         Advanced,
     };
     modsh_options.addOption(ShellBuiltins, "shell_builtins", 
-        b.option(ShellBuiltins, "shell_builtins", "Choose the kind of Shell Builtin functionality to include [default=None]") orelse .None
+        b.option(ShellBuiltins, "shell_builtins", "Choose the kind of Shell Builtin functionality to include [default=Bare]") orelse .Bare
     );
     // -- Add All Shell Build Options
     modsh_exe.addOptions("modsh_options", modsh_options);
