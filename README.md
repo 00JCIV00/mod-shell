@@ -6,12 +6,12 @@ A Modular Shell. ModSh is designed to allow users to build custom Shells of vary
 
 1. Download
 ```shell
-git pull https://github.com/00JCIV00/mod-shell.git
+git clone https://github.com/00JCIV00/mod-shell.git
 cd mod-shell
 ```
 2. Build 
 ```shell
-zig build shell -Dshell_builtins=Basic -Dshell_prefix_kind=Text -Dshell_prefix=modsh -freference-trace -Drelease=true
+zig build shell -Dshell_builtins=Basic -Dshell_prefix_kind=Command -Dshell_prefix=whoami -freference-trace -Drelease=true
 ```
 3. Run
 ```shell
