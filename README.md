@@ -6,7 +6,7 @@ A Modular Shell. ModSh is designed to allow users to build custom Shells of vary
 
 1. Download
 ```shell
-https://github.com/00JCIV00/mod-shell.git
+git pull https://github.com/00JCIV00/mod-shell.git
 cd mod-shell
 ```
 2. Build 
